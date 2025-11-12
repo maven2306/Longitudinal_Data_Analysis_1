@@ -32,10 +32,47 @@ dat_dt <- setDT(read_sas(filename))
 ```
 
 
+# Data Preparation
+```{r reshape}
+
+reshape_dat <- function(dat) {
+    dat_long <- dat %>%
+        pivot_longer(
+            cols = matches("^(bprs|cdrsb|abpet|taupet)\\d+"),
+            names_to = c(".value", "time"),
+            names_pattern = "(.+)(\\d+)"
+        )
+    dat_long
+}
+
+to_factor <- function(dat_long) {
+
+    dat_long <- dat_long %>%
+        mutate(
+            time = as.factor(time),  # coded 0-6
+            sex = as.factor(sex),
+            edu = as.factor(edu),
+            trial = as.factor(trial),
+            job = as.factor(job),
+            wzc = as.factor(wzc),
+            time_num = as.numeric(time)  # coded 1-7
+        )
+    dat_long
+}
+
+dat_long <- reshape_dat(dat)
+dat_long <- to_factor(dat_long)
+
+
+```
+
+
 # Q3: Multivariate Model
 
 
-Let's prepare our dataset for the use with nlme. We need complete observations per subject
+Let's prepare our dataset for the use with nlme. 
+
+We need complete observations per subject
 ```{r}
 dat_long <- dat_long %>%
   mutate(patid = as.factor(patid))
@@ -79,12 +116,16 @@ When keeping only subjects with complete observations, we exclude n = 147 person
 
 We have > 1 observation for each subject in our dat_long_compl2. 
 
+
+#### Mean structure
+##### Main effects
 ```{r}
 m_full <- gls(
   bprs ~ time + age + sex + trial + edu + bmi + inkomen + job + adl + wzc + cdrsb + abpet + taupet, # - 1: we could also remove the intercept: then no absolute, not relative to bl
   #weights = varIdent(form = ~ 1 | time),       # different variances per year
   method = "ML",
-  data = dat_long_cmpl
+  data = dat_long,
+  na.action = na.exclude
 )
 
 m1 <- m_full
@@ -132,6 +173,7 @@ rm(m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12)
 The strongest Likelihood Ratios are obtained for time, age and trial. 
 We only exclude inkomen as predictor.
 
+##### Interaction effects I
 Now lets see if some interactions are meaningful:
 ```{r}
 
@@ -169,6 +211,7 @@ rm(m2, m3, m4, m5)
 No interactions between time and other predictors seem plausible for our data.
 
 
+##### Interaction effects II
 What about other interactions?
 ```{r}
 m1_save <- m1
@@ -218,8 +261,11 @@ anova(m7, m1)
 
 rm(m2, m3, m4, m5, m6, m7)
 
+m.meanstr <- m1
+
 ```
 
+##### Non-linear trends
 Now lets see if we can detect some non-linear trends
 ```{r}
 m1_save <- m1
@@ -248,6 +294,7 @@ Lets continue with optimizing the variance structure.
 
 We started with uncorrelated errors by leaving corSymm() unspecified -> defaults to NULL
 
+#### Variance Structure
 Now what if we add weights to our variances to allow for heterogeneity?
 ```{r}
 # with nlme package ###
@@ -265,6 +312,7 @@ summary(m2)
 anova(m1, m2)
 
 m1 <- m2
+m.varstr <- m1
 
 
 ```
@@ -272,31 +320,39 @@ m1 <- m2
 Ok, so fitting different variances per year does improve our model fit. Lets stick with this model.
 
 
+#### Covariance structure
+
+
 Now lets look at the correlations:
 ```{r}
-# continue with unstructured errors: every time point has own variance, 
+
+## Model fixed effects form
+form <-  bprs ~ time + sex + age  + trial + edu + bmi + job + adl + wzc + cdrsb + abpet * taupet
+
+# Model 2a: with unstructured errors: every time point has own variance, 
 # and all year-pairs can have their own covariance 
 m2 <- gls(
-  bprs ~ time + sex + age  + trial + edu + bmi + job + adl + wzc + cdrsb + abpet * taupet, 
+  fixed = form, 
   correlation = corSymm(form = ~ 1 | patid),   # unstructured within-subject correlation
   weights = varIdent(form = ~ 1 | time),       # different variances per year
   method = "ML",
-  data = dat_long_cmpl
+  data = dat_long,
+  na.action = na.exclude
 )
-# summary(m2)
 anova(m1, m2)  # allowing different correlations between errors is better
 getVarCov(m2)
 
 m1 <- m2
 
 
-# now add time as our ordering variable: treat time as numeric, to respect the ordering
+# Model 2b: now add time as our ordering variable: treat time as numeric, to respect the ordering
 m3 <- gls(
-  bprs ~ time + sex + age  + trial + edu + bmi + job + adl + wzc + cdrsb + abpet * taupet, 
+  fixed = form, 
   correlation = corSymm(form = ~ as.numeric(time) | patid),   ###
   weights = varIdent(form = ~ 1 | time),       # different variances per year
   method = "ML",
-  data = dat_long_cmpl2  # using only subset of data with > 1 obs per subject
+  data = dat_long, # dat_long_cmpl2  # using only subset of data with > 1 obs per subject
+  na.action = na.exclude
 )
 summary(m3)
 #   AIC      BIC   logLik
@@ -304,13 +360,14 @@ summary(m3)
 # anova(m1, m3)
 getVarCov(m3)
 
-## compund symmetry
+## Model 4: Compound symmetry
 m4 <- gls(
-  bprs ~ time + sex + age  + trial + edu + bmi + job + adl + wzc + cdrsb + abpet * taupet, 
+  fixed = form, 
   correlation = corCompSymm(form = ~ time_num | patid),   # unstructured within-subject correlation
   weights = varIdent(form = ~ 1 | time),       # different variances per year
   method = "ML",
-  data = dat_long_cmpl
+  data = dat_long,
+  na.action = na.exclude
 )
 
 anova(m1, m4)  # allowing different correlations between errors is better
@@ -318,24 +375,48 @@ getVarCov(m4)
 m1_save <- m1
 m1 <- m4
 
-## autoregressive: decreasing correlations with increasing time lag, stronger ones for adjancent lags
+## Model 5: autoregressive: decreasing correlations with increasing time lag, stronger ones for adjancent lags
 m5 <- gls(
-  bprs ~ time + sex + age  + trial + edu + bmi + job + adl + wzc + cdrsb + abpet * taupet, 
+  fixed = form, 
   correlation = corAR1(form = ~ time_num | patid),   # unstructured within-subject correlation
   weights = varIdent(form = ~ 1 | time),       # different variances per year
   method = "ML",
-  data = dat_long_cmpl
+  data = dat_long,
+  na.action = na.exclude
 )
 
 anova(m1, m5)  # we can't compare the models anymore due to same nr of df's
 getVarCov(m5)
 
+# ---- Model 6: Toeplitz (ARMA(6,0)) ----
+m6_TOEP <- lme(
+  fixed = form,
+  correlation = corARMA(form = ~ time | patid, p = 6, q = 0),
+  weights = varIdent(form = ~ 1 | time),       # different variances per year
+  data = dat_long,
+  method = "REML",
+  na.action = na.exclude
+)
+anova(m1, m6)  
+getVarCov(m6)
 
-m1 <- m5  # autoregressive model
+
+control_lme <- lmeControl(
+  opt = "nlminb", 
+  msMaxIter = 200,       # max iterations of optimizer
+  msMaxEval = 400,       # total evaluations
+  returnObject = TRUE
+)
+
+### Model evaluation
+# AIC()
+
+m.covarstr <- m5  # autoregressive model
 
 ```
 
 Model 2 with correlated (unstructured) errors improves fit -> We keep the model.
+But the problem is, we have missing data in some years --> to apply unstructured covariance structure for errors, we can only use complete observations. But this is the case for other structures, too.
 
 Model 3 imposes an ordering of the correlations based on the time variable -> We can't compare it to the other model anymore because with time as numeric, it uses different number of observations.
 
@@ -348,6 +429,17 @@ Model 5 introduces autoregressive correlation structure. It improves model fit, 
 We can't compare Model 5 and 4 directly, so we have to find out yet which covariance structure is the best.
 
 
+Summarising the conclusions on variance & covariance structure:
+- The AR(1) component captures the temporal correlation in repeated BPRS measures — i.e., scores from adjacent years are more similar than those several years apart.
+- The heterogeneous variance (varIdent) allows different variability per year, which is realistic in your study since measurement noise and patient dropout tend to increase over time.
+- The significant improvement in log-likelihood and lower AIC/BIC demonstrate that this flexibility meaningfully improves model fit without overfitting.
+- This means that correlations between consecutive yearly measurements decay exponentially with time lag, while allowing variability to differ across years
+
+
+
+
+
+
 
 ```{r}
 ### visualize the variances to find out
@@ -357,7 +449,7 @@ We can't compare Model 5 and 4 directly, so we have to find out yet which covari
 
   
   
----------------------------------------------------------------------------------
+#### with small model:
 We try some stuff out, using only age as a predictor. 
 Lets do it as asked in the assignment and predict the BPRS score (which is a psychiatric score). It would make more sense, of course, to predict the dementia score with the psychiatric condition and not the other way round. 
 
@@ -458,6 +550,88 @@ rm(bprs_mod0, bprs_mod1, bprs_mod2, bprs_mod3, bprs_mod0noint, sum_bprs_mod0noin
 All correlations get "eaten up" by the intercept, if we fit one. It represents the predicted value of our outcome (BPRS score) when all predictors are set to 0.
 While a time = 0 makes sense here, the variable age is not that meaningful at age = 0. 
 We could center age to make it interpretable: Then, the intercept would indicate the predicted outcome at the mean age of our sample at year 0 (baseline).
+
+
+# Rafkes Code
+## Q3. Fit a multivariate model, and find the most parsimonious mean structure which can be used to describe
+the average evolutions in the data. What covariance structures are applicable in this case ? What is the
+most parsimonious structure you can find ?
+
+aiming for simplicity to enhance interpretation and advance theoretical development.
+
+Due to missing data in some years, the Unstructured Covariance structure is not the most suitable for the data. 
+
+```{r Q3}
+library(nlme)
+
+# Base model specification (fixed effects)
+form <- bprs ~ year + age + sex + edu + bmi + job + adl + wzc
+
+# ---- Model 2: Compound symmetry ----
+m2_CS <- lme(
+  fixed = form,
+  random = ~ 1 | patid,
+  correlation = corCompSymm(form = ~ year | patid),
+  data = data_long,
+  method = "REML",
+    na.action = na.exclude
+)
+
+# ---- Model 3: AR(1) ----
+m3_AR1 <- lme(
+  fixed = form,
+  random = ~ 1 | patid,
+  correlation = corAR1(form = ~ year | patid),
+  data = data_long,
+  method = "REML",
+    na.action = na.exclude
+)
+
+# ---- Model 4: Toeplitz (ARMA(6,0)) ----
+m4_TOEP <- lme(
+  fixed = form,
+  random = ~ 1 | patid,
+  correlation = corARMA(form = ~ year | patid, p = 6, q = 0),
+  data = data_long,
+  method = "REML",
+    na.action = na.exclude
+)
+
+control_lme <- lmeControl(
+  opt = "nlminb", 
+  msMaxIter = 200,       # max iterations of optimizer
+  msMaxEval = 400,       # total evaluations
+  returnObject = TRUE
+)
+
+# ---- Model 5: AR(1) + heterogeneous variances ----
+m5_AR1het <- lme(
+  fixed = form,
+  random = ~ 1 | patid,
+  correlation = corAR1(form = ~ year | patid),
+  weights = varIdent(form = ~ 1 | year),
+  data = data_long,
+  method = "REML",
+    na.action = na.exclude,
+  control = control_lme
+)
+
+```
+
+
+```{r model evaluation}
+AIC(m2_CS, m3_AR1, m4_TOEP, m5_AR1het)
+BIC(m2_CS, m3_AR1, m4_TOEP, m5_AR1het)
+
+anova(m2_CS, m3_AR1, m4_TOEP, m5_AR1het)
+```
+The AR(1) component captures the temporal correlation in repeated BPRS measures — i.e., scores from adjacent years are more similar than those several years apart.
+
+The heterogeneous variance (varIdent) allows different variability per year, which is realistic in your study since measurement noise and patient dropout tend to increase over time.
+
+The significant improvement in log-likelihood and lower AIC/BIC demonstrate that this flexibility meaningfully improves model fit without overfitting.
+
+This means that correlations between consecutive yearly measurements decay exponentially with time lag, while allowing variability to differ across years
 
 
 
