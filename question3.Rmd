@@ -32,7 +32,7 @@ dat_dt <- setDT(read_sas(filename))
 ```
 
 
-# Data Preparation
+Data Preparation
 ```{r reshape}
 
 reshape_dat <- function(dat) {
@@ -65,6 +65,11 @@ dat_long <- to_factor(dat_long)
 
 
 ```
+
+# *Open Questions*
+
+1) fit multivariate model with vs. without random statement
+2) fit with vs. without intercept
 
 
 # Q3: Multivariate Model
