@@ -11,6 +11,16 @@ libraries <- c(
   "haven", "dplyr", "tidyr", "ggplot2", "reshape2",
   "viridis", "knitr", "kableExtra", "nlme"
 )
+# Install missing packages
+for (pkg in libraries) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+
+# Load all packages
+invisible(lapply(libraries, library, character.only = TRUE))
+
 
 dat <- read_sas("alzheimer25.sas7bdat")
 ```

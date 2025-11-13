@@ -460,9 +460,6 @@ ggplot(dat, aes(x = adl, y = age)) +
     x = "ADL",
     y = "Age"
   )
-
-
-
 ```
 ## Overall dropout rate
 
@@ -589,6 +586,6 @@ This pattern of dropout might explain why the overall variance of BPRS appears c
 
 Based on these findings, a linear mixed-effects model is the most appropriate statistical approach for analyzing this longitudinal dataset. Time and age should be included as fixed effects, with patient ID modeled as a random effect to account for repeated measures within individuals. Since patients are also nested within trials, trial can be included as an additional random effect. The residuals extracted from the OLS model follow this formula: $r_i = y_i - X_i\hat{\beta}_{OLS} \approx Z_ib_i + \epsilon_i$, which implies that after taking into account the fixed effects, any variance left is the sum of subject-specific effects plus any residual variance. From the spaghetti plot of the residuals we can confirm that different subjects need different intercepts. This plot also reveals the need of subject-specific slopes, as some subjects' bprs score increase faster or slower than the average over time. The fact that the residuals cluster around 0 shows that the distributional assumption $E \left( \begin{pmatrix} b_{0i} \\ b_{1i} \end{pmatrix} \right) = \begin{pmatrix} 0 \\ 0 \end{pmatrix}$ is met. 
 
-Finally, given that the data are collected at regular time intervals, it is reasonable to assume an autoregressive correlation structure for the residual variance, capturing the expected correlation between adjacent time points (plot a semivariogram once the linear mixed model is fitted).
+Finally, given that the data are collected at regular time intervals, it is reasonable to assume an autoregressive correlation structure for the within-subject residuals, capturing the expected correlation between adjacent time points (plot a semivariogram once the linear mixed model is fitted).
 
 
