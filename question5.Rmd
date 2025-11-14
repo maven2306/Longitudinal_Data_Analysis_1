@@ -2,7 +2,9 @@
 title: "Question 5"
 author: "Rafke Niemans"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 
@@ -215,88 +217,88 @@ It appears like we can't reduce the mean structure any longer, so I would choose
 
 
 
-```{r lmm}
-# Scaled covariates help convergence
-dat_long$age_s <- scale(dat_long$age)
-dat_long$bmi_s <- scale(dat_long$bmi)
-dat_long$adl_s <- scale(dat_long$adl)
-dat_long <- dat_long %>%
-  mutate(time_num = as.numeric(as.character(trial)))
+<!-- ```{r lmm} -->
+<!-- # Scaled covariates help convergence -->
+<!-- dat_long$age_s <- scale(dat_long$age) -->
+<!-- dat_long$bmi_s <- scale(dat_long$bmi) -->
+<!-- dat_long$adl_s <- scale(dat_long$adl) -->
+<!-- dat_long <- dat_long %>% -->
+<!--   mutate(time_num = as.numeric(as.character(trial))) -->
 
-form_fixed <- bprs ~ time_num +
-  age_s + sex + edu + bmi_s + job + adl_s + wzc +
-  cdrsb + abpet + taupet 
+<!-- form_fixed <- bprs ~ time_num + -->
+<!--   age_s + sex + edu + bmi_s + job + adl_s + wzc + -->
+<!--   cdrsb + abpet + taupet  -->
 
-ctrl <- lmeControl(opt = "nlminb", msMaxIter = 500, msMaxEval = 800, returnObject = TRUE)
+<!-- ctrl <- lmeControl(opt = "nlminb", msMaxIter = 500, msMaxEval = 800, returnObject = TRUE) -->
 
-# Model 1: Random intercept and slope, NO residual correlation
-m_no_corr <- lme(
-  fixed = form_fixed,
-  data = dat_long,
-  random = ~ time_num | patid, 
-  method = "REML",
-  na.action = na.omit 
-)
+<!-- # Model 1: Random intercept and slope, NO residual correlation -->
+<!-- m_no_corr <- lme( -->
+<!--   fixed = form_fixed, -->
+<!--   data = dat_long, -->
+<!--   random = ~ time_num | patid,  -->
+<!--   method = "REML", -->
+<!--   na.action = na.omit  -->
+<!-- ) -->
 
-# Model 2: Same random effects but with Compound Symmetry residual correlation 
-m_compsymm<- lme(
-  fixed = form_fixed,
-  random = ~1 | patid,
-  correlation = corCompSymm(form = ~as.numeric(time_num) | patid),
-  data = dat_long,
-  method = "REML",
-  na.action = na.omit,
-  control = ctrl
-)
+<!-- # Model 2: Same random effects but with Compound Symmetry residual correlation  -->
+<!-- m_compsymm<- lme( -->
+<!--   fixed = form_fixed, -->
+<!--   random = ~1 | patid, -->
+<!--   correlation = corCompSymm(form = ~as.numeric(time_num) | patid), -->
+<!--   data = dat_long, -->
+<!--   method = "REML", -->
+<!--   na.action = na.omit, -->
+<!--   control = ctrl -->
+<!-- ) -->
 
-dat_long_unique <- dat_long %>%
-  group_by(patid) %>%
-  filter(n_distinct(time_num) > 1) %>%
-  ungroup()
+<!-- dat_long_unique <- dat_long %>% -->
+<!--   group_by(patid) %>% -->
+<!--   filter(n_distinct(time_num) > 1) %>% -->
+<!--   ungroup() -->
 
-# Model 3: Same random effects, but WITH AR(1) residual correlation
-m_ar1 <- lme(
-  fixed = form_fixed,
-  data = dat_long_unique,
-  random = ~ time_num | patid,
-  correlation = corAR1(form = ~ time_num | patid),
-  method = "REML",
-  na.action = na.omit,
-  control = ctrl
-)
+<!-- # Model 3: Same random effects, but WITH AR(1) residual correlation -->
+<!-- m_ar1 <- lme( -->
+<!--   fixed = form_fixed, -->
+<!--   data = dat_long_unique, -->
+<!--   random = ~ time_num | patid, -->
+<!--   correlation = corAR1(form = ~ time_num | patid), -->
+<!--   method = "REML", -->
+<!--   na.action = na.omit, -->
+<!--   control = ctrl -->
+<!-- ) -->
 
-anova(m_no_corr, m_ar1)
-anova(m_no_corr, m_compsymm)
-anova(m_compsymm, m_ar1)
+<!-- anova(m_no_corr, m_ar1) -->
+<!-- anova(m_no_corr, m_compsymm) -->
+<!-- anova(m_compsymm, m_ar1) -->
 
-```
+<!-- ``` -->
 
-If singular, the random intercept adds no variance. 
+<!-- If singular, the random intercept adds no variance.  -->
 
-```{r}
-vcov(m_no_corr)
-vcov(m_compsymm)
-# vcov(m_ar1)
-```
-```{r model results}
-#summary(m_ar1)
-summary(m_no_corr)
-summary(m_compsymm)
-```
-
-
-Inter-individual variability is almost fully explained by these predictors hence the random intercept variance collapses to zero. That means it falls back to the multivariate OLS in practical terms. Residual variance (≈147) reflects large within-person or unexplained temporal fluctuation. 
+<!-- ```{r} -->
+<!-- vcov(m_no_corr) -->
+<!-- vcov(m_compsymm) -->
+<!-- # vcov(m_ar1) -->
+<!-- ``` -->
+<!-- ```{r model results} -->
+<!-- #summary(m_ar1) -->
+<!-- summary(m_no_corr) -->
+<!-- summary(m_compsymm) -->
+<!-- ``` -->
 
 
-Check the appropriateness of your random-effects model. Calculate the subject-specific intercepts/slopes and compare them to the ones you obtained from a two-stage analysis. What do you conclude?
+<!-- Inter-individual variability is almost fully explained by these predictors hence the random intercept variance collapses to zero. That means it falls back to the multivariate OLS in practical terms. Residual variance (≈147) reflects large within-person or unexplained temporal fluctuation.  -->
 
-```{r subject specific intercepts/slopes}
-m_RI  <- update(m_full, random = list(institute_id = pdDiag(~1), patid = pdDiag(~ 1)), method = "ML")
-m_RIRS <- update(m_full, random = list(institute_id = pdDiag(~1), patid = pdSymm(~ year)),method = "ML")
-anova(m_RI, m_RIRS)  # LRT; boundary -> p-value conservative; for exact use RLRsim::exactRLRT
 
-m_noCenter <- update(m_full, random = list(patid = pdSymm(~ year)), method = "ML")
-anova(m_noCenter, update(m_full, method = "ML"))
-```
+<!-- Check the appropriateness of your random-effects model. Calculate the subject-specific intercepts/slopes and compare them to the ones you obtained from a two-stage analysis. What do you conclude? -->
+
+<!-- ```{r subject specific intercepts/slopes} -->
+<!-- m_RI  <- update(m_full, random = list(institute_id = pdDiag(~1), patid = pdDiag(~ 1)), method = "ML") -->
+<!-- m_RIRS <- update(m_full, random = list(institute_id = pdDiag(~1), patid = pdSymm(~ year)),method = "ML") -->
+<!-- anova(m_RI, m_RIRS)  # LRT; boundary -> p-value conservative; for exact use RLRsim::exactRLRT -->
+
+<!-- m_noCenter <- update(m_full, random = list(patid = pdSymm(~ year)), method = "ML") -->
+<!-- anova(m_noCenter, update(m_full, method = "ML")) -->
+<!-- ``` -->
 
 
