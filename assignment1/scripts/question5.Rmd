@@ -4,7 +4,7 @@ author: "Rafke Niemans"
 date: "`r Sys.Date()`"
 output:
   html_document:
-    df_print: paged
+    # df_print: paged
 ---
 
 
@@ -174,7 +174,6 @@ model_compsymm <- lme(
   fixed = formula_fe,
   data = dat_long,
   random = ~ time_num | trial/patid,
-  # The form only specifies the grouping, as correlation is constant over time
   correlation = corCompSymm(form = ~ 1 | trial/patid),
   method = "REML",
   na.action = na.omit 
@@ -198,38 +197,84 @@ model_ar1 <- lme(
 anova(model_no_corr, model_ar1)
 ```
 
-It appears that we can't reject the null hypothesis of independent residuals
+Neither more complex model fit the data better than the simpler model that assumes indepndent residuals. We continue without modeling serial correlation of the within-subject residuals. 
+
+
+
 
 Now we choose the mean structure
 ```{r}
 # Refit m5 using ML instead of REML
 
-m5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job) + taupet0 + abpet0 + cdrsb0 + (time_num | trial/patid),
+m5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job + taupet0 + abpet0 + cdrsb0) + (time_num | trial/patid),
            data = dat_long, REML = FALSE)
 summary(m5)
 
-m6 <- lmer(bprs ~ time_num * (age + adl + job + wzc) + sex  + taupet0 + abpet0 + cdrsb0 + (time_num | trial/patid)
+```
+The interaction effect of sex, taupet0, abpet0 and wzc is not significant, let's remove them.
+
+
+```{r}
+
+m6 <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex + taupet0 + abpet0 + wzc +  (time_num | trial/patid)
            ,data = dat_long, REML = FALSE)
 summary(m6)
 
-anova(m5, m6)
-
-m7 <- lmer(bprs ~ time_num * (age + adl + job) + sex + wzc + taupet0 + abpet0 + cdrsb0 + (time_num | trial/patid), data = dat_long, REML = FALSE)
-summary(m7)
-
-anova(m5,m7)
-anova(m6,m7)
-
-
-m7_REML <- lmer(bprs ~ time_num * (age + adl + job) + sex + wzc + (time_num | trial/patid), data = dat_long, REML = TRUE)
-summary(m7_REML)
-
+anova(m6, m5)
 
 ```
-It appears like we can't reduce the mean structure any longer, so I would choose model 7_REML as the final linear mixed model. 
+The more complex model does not significantly improve the fit, therefore we continue with the simpler model, m6. 
 
 
 
+Both taupet0 and abpet0 are not significant. We might choose to remove them from the model
+```{r}
+m7 <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex  + wzc + (time_num | trial/patid)
+           ,data = dat_long, REML = FALSE)
+summary(m7)
+
+anova(m7, m6)
+```
+The more complex model's fit is not significantly better. We can then choose to continue with the simpler model, m7. 
+
+
+
+```{r}
+m7_REML <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex  + wzc + (time_num | trial/patid)
+           ,data = dat_long, REML = TRUE)
+summary(m7_REML)
+```
+
+```{r}
+res <- resid(m7_REML)
+fit <- fitted(m7_REML)
+plot(fit, res)
+abline(h = 0, col = 2)
+
+
+
+# QQ plot of the residuals 
+qqnorm(res); qqline(res)
+
+
+hist(res, breaks = 40)
+
+```
+
+```{r}
+re <- ranef(m7_REML, condVar = TRUE)
+
+# QQ plot of the intercepts
+qqnorm(ranef(m7_REML)$`patid:trial`[, "(Intercept)"])
+qqline(ranef(m7_REML)$`patid:trial`[, "(Intercept)"])
+
+```
+```{r}
+# QQ plot of the slopes
+qqnorm(ranef(m7_REML)$`patid:trial`[, "time_num"])
+qqline(ranef(m7_REML)$`patid:trial`[, "time_num"])
+
+```
 
 
 <!-- ```{r lmm} -->
