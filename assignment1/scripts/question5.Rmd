@@ -83,14 +83,19 @@ m4 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job) + taupet0 + abpet0 + 
            data = dat_long, REML = TRUE) # Is var(slope) and cor(slope,intercept) = 0? 
 
 m5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job) + taupet0 + abpet0 + cdrsb0 + (time_num | trial/patid), 
-           data = dat_long, REML = TRUE) # model with random intercept and slope for
+           data = dat_long, REML = TRUE) # model with random intercept and slope for patid and trial
+
+m4.5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job) + taupet0 + abpet0 + cdrsb0 + (1 | trial) + (time_num | patid),
+             data = dat_long,REML = TRUE) # model with random intercept and slope for patid and only random intercept for trial
+
+
 # patid and trial
 
 summary(m5)
 results <- data.frame(
-  Model = c("m1", "m2", "m3", "m4", "m5"),
-  AIC = AIC(m1, m2, m3, m4, m5),
-  BIC = BIC(m1, m2, m3, m4, m5)
+  Model = c("m1", "m2", "m3", "m4", "m5", "m4.5"),
+  AIC = AIC(m1, m2, m3, m4, m5, m4.5),
+  BIC = BIC(m1, m2, m3, m4, m5, m4.5)
 )
 
 
@@ -211,6 +216,36 @@ m5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job + taupet0 + abpet0 + c
 summary(m5)
 
 ```
+
+```{r}
+# Install and load the car package if you haven't already
+# install.packages("car")
+library(car)
+
+# Assuming 'm5' is your fitted lmer model
+vif_values <- vif(m5)
+
+# Print the VIF values
+print(vif_values)
+
+
+
+```
+```{r}
+cor(dat_long[, c("age", "adl", "cdrsb0", "taupet0", "abpet0", "time_num")], use = "pairwise")
+
+```
+```{r}
+tmp <- dat_long
+
+tmp$job_num <- as.numeric(as.character(tmp$job))
+tmp$wzc_num <- as.numeric(as.character(tmp$wzc))
+cor(tmp[, c("age", "job_num", "wzc_num")], use = "pairwise")
+
+
+```
+
+
 The interaction effect of sex, taupet0, abpet0 and wzc is not significant, let's remove them.
 
 
@@ -227,27 +262,15 @@ The more complex model does not significantly improve the fit, therefore we cont
 
 
 
-Both taupet0 and abpet0 are not significant. We might choose to remove them from the model
 ```{r}
-m7 <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex  + wzc + (time_num | trial/patid)
-           ,data = dat_long, REML = FALSE)
-summary(m7)
-
-anova(m7, m6)
-```
-The more complex model's fit is not significantly better. We can then choose to continue with the simpler model, m7. 
-
-
-
-```{r}
-m7_REML <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex  + wzc + (time_num | trial/patid)
+m6 <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex + taupet0 + abpet0 + wzc +  (time_num | trial/patid)
            ,data = dat_long, REML = TRUE)
-summary(m7_REML)
+summary(m6)
 ```
 
 ```{r}
-res <- resid(m7_REML)
-fit <- fitted(m7_REML)
+res <- resid(m6)
+fit <- fitted(m6)
 plot(fit, res)
 abline(h = 0, col = 2)
 
@@ -262,17 +285,25 @@ hist(res, breaks = 40)
 ```
 
 ```{r}
-re <- ranef(m7_REML, condVar = TRUE)
+re <- ranef(m6, condVar = TRUE)
 
-# QQ plot of the intercepts
-qqnorm(ranef(m7_REML)$`patid:trial`[, "(Intercept)"])
-qqline(ranef(m7_REML)$`patid:trial`[, "(Intercept)"])
+## --- Patient-level random effects (patid within trial) ---
+qqnorm(re$`patid:trial`[, "(Intercept)"],
+       main = "QQ Plot – Random Intercepts (patid:trial)")
+qqline(re$`patid:trial`[, "(Intercept)"])
 
-```
-```{r}
-# QQ plot of the slopes
-qqnorm(ranef(m7_REML)$`patid:trial`[, "time_num"])
-qqline(ranef(m7_REML)$`patid:trial`[, "time_num"])
+qqnorm(re$`patid:trial`[, "time_num"],
+       main = "QQ Plot – Random Slopes (patid:trial)")
+qqline(re$`patid:trial`[, "time_num"])
+
+## --- Trial-level random effects ---
+qqnorm(re$trial[, "(Intercept)"],
+       main = "QQ Plot – Random Intercepts (trial)")
+qqline(re$trial[, "(Intercept)"])
+
+qqnorm(re$trial[, "time_num"],
+       main = "QQ Plot – Random Slopes (trial)")
+qqline(re$trial[, "time_num"])
 
 ```
 
