@@ -170,8 +170,6 @@ ggplot(mean_var_summary, aes(x = year, y = mean_value)) +
   theme(strip.text = element_text(face = "bold"))
 
 ```
-
-
 ## Correlation matrix of continuous features at baseline
 
 ```{r}
