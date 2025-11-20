@@ -155,19 +155,33 @@ mean_var_summary <- plot_df %>%
     .groups = "drop"
   )
 
-ggplot(mean_var_summary, aes(x = year, y = mean_value)) +
-  geom_line(color = "firebrick", linewidth = 1.2) +
-  geom_point(color = "firebrick", size = 2) +
-  geom_ribbon(aes(ymin = mean_value - sd_value,
-                  ymax = mean_value + sd_value),
-              fill = "firebrick", alpha = 0.2) +
-  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
-  labs(
-    title = "Mean ± SD per variable across years",
-    x = "Year", y = "Mean ± SD"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(strip.text = element_text(face = "bold"))
+plots <- list()
+
+for (v in unique(mean_var_summary$variable)) {
+  
+  df_v <- mean_var_summary %>% filter(variable == v)
+  
+  p <- ggplot(df_v, aes(x = year, y = mean_value)) +
+    geom_line(color = "firebrick", linewidth = 1.2) +
+    geom_point(color = "firebrick", size = 2) +
+    geom_ribbon(aes(ymin = mean_value - sd_value,
+                    ymax = mean_value + sd_value),
+                fill = "firebrick", alpha = 0.2) +
+    labs(
+      title = paste("Mean ± SD across years –", v),
+      x = "Year", y = "Mean ± SD"
+    ) +
+    theme_minimal(base_size = 14)
+  
+  plots[[v]] <- p
+}
+
+# Display all four plots
+plots$bprs
+plots$cdrsb
+plots$abpet
+plots$taupet
+
 
 ```
 ## Correlation matrix of continuous features at baseline
