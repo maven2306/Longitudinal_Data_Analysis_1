@@ -91,7 +91,7 @@ m4.5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job) + taupet0 + abpet0 
 
 # patid and trial
 
-summary(m5)
+summary(m4.5)
 results <- data.frame(
   Model = c("m1", "m2", "m3", "m4", "m5", "m4.5"),
   AIC = AIC(m1, m2, m3, m4, m5, m4.5),
@@ -103,28 +103,37 @@ print(results)
 
 ```
 
-We proceed with the random-effects structure of model m5
+We proceed with the random-effects structure of model m4.5 
+
 Now we check the residual correlation structure
 ```{r}
+
+library(nlme)
+library(tidyverse)
+library(reshape2)
 
 # maximal fixed-effects formula
 formula_fe <- bprs ~ time_num * (sex + age + wzc + adl + job) + taupet0 + abpet0 + cdrsb0
 
-# Model 1: Random intercept and slope, NO residual correlation
+# Model 1: Random intercept for trial, Random intercept + slope for patid
 model_no_corr <- lme(
   fixed = formula_fe,
   data = dat_long,
-  random = ~ time_num | trial/patid, 
+  # We use a list to specify different structures for the nested levels
+  random = list(trial = ~ 1, patid = ~ time_num), 
   method = "REML",
   na.action = na.omit 
 )
 
-###  Calculate residual correlation matrix 
+### Calculate residual correlation matrix 
+# Note: We extract data directly from the model object to ensure 
+# rows align perfectly (handling na.omit correctly)
 residuals_df <- data.frame(
   patid = model_no_corr$groups$patid,
   trial = model_no_corr$groups$trial,
-  time_num = dat_long$time_num[as.numeric(rownames(model_no_corr$groups))],
-  residual = residuals(model_no_corr, type = "normalized") # Use normalized residuals
+  # Extract time_num corresponding to the rows actually used in the model
+  time_num = getData(model_no_corr)$time_num, 
+  residual = residuals(model_no_corr, type = "normalized")
 )
 
 residuals_wide <- residuals_df %>%
@@ -144,8 +153,9 @@ correlation_matrix <- cor(residual_columns, use = "pairwise.complete.obs")
 
 melted <- melt(correlation_matrix)
 
+# Plotting
 ggplot(melted, aes(x=Var1, y=Var2, fill=value)) +
-  geom_tile(color = "white", linewidth = 0.4) +  # thin white grid lines
+  geom_tile(color = "white", linewidth = 0.4) + 
   scale_fill_gradient2(
     low = "#4575b4", mid = "white", high = "#d73027", midpoint = 0,
     limits = c(-1, 1),
@@ -153,7 +163,7 @@ ggplot(melted, aes(x=Var1, y=Var2, fill=value)) +
   ) +
   coord_fixed() + 
   labs(
-    title = "Correlation Heatmap ",
+    title = "Correlation Heatmap",
     subtitle ="Correlation of the within-subject residuals",
     x = NULL, y = NULL
   ) +
@@ -169,7 +179,6 @@ ggplot(melted, aes(x=Var1, y=Var2, fill=value)) +
     legend.text = element_text(size = 10)
   )
 
-
 ```
 The residual correlation matrix seems to suggest very little correlation between the residuals. We might try to fit models with Compound Symmetry and AR(1) structures and compare them to the model that assumes independence. 
 
@@ -178,27 +187,31 @@ The residual correlation matrix seems to suggest very little correlation between
 model_compsymm <- lme(
   fixed = formula_fe,
   data = dat_long,
-  random = ~ time_num | trial/patid,
-  correlation = corCompSymm(form = ~ 1 | trial/patid),
+  # Random: Intercept only for trial, Slope+Intercept for patid
+  random = list(trial = ~ 1, patid = ~ time_num), 
+  # Correlation: Within-subject (patid nested in trial)
+  correlation = corCompSymm(form = ~ 1 | trial/patid), 
   method = "REML",
   na.action = na.omit 
 )
 
-# This comparison will now work
+# Compare Model 1 (No correlation) vs Model 2 (CompSymm)
 anova(model_no_corr, model_compsymm)
 
 
 # Model 3: AR(1) residual correlation
-
 model_ar1 <- lme(
   fixed = formula_fe,
   data = dat_long,
-  random = ~ time_num | trial/patid,
-  correlation = corAR1(form = ~ time_num | trial/patid),
+  # Random: Intercept only for trial, Slope+Intercept for patid
+  random = list(trial = ~ 1, patid = ~ time_num),
+  # Correlation: Within-subject, ordered by time_num
+  correlation = corAR1(form = ~ time_num | trial/patid), 
   method = "REML",
   na.action = na.omit 
 )
 
+# Compare Model 1 (No correlation) vs Model 3 (AR1)
 anova(model_no_corr, model_ar1)
 ```
 
@@ -209,68 +222,47 @@ Neither more complex model fit the data better than the simpler model that assum
 
 Now we choose the mean structure
 ```{r}
-# Refit m5 using ML instead of REML
+# Refit m4.5 using ML instead of REML
 
-m5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job + taupet0 + abpet0 + cdrsb0) + (time_num | trial/patid),
-           data = dat_long, REML = FALSE)
+m4.5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job + taupet0 + abpet0 + cdrsb0) + (1 | trial) + (time_num | patid),
+             data = dat_long,REML = FALSE) 
+summary(m4.5)
+
+
+```
+
+
+
+
+
+```{r}
+m4.5 <- lmer(bprs ~ time_num * (sex + age + wzc + adl + job + taupet0 + abpet0 + cdrsb0) + (1 | trial) + (time_num | patid),
+             data = dat_long,REML = FALSE) 
+
+summary(m4.5)
+
+m5 <- lmer(bprs ~ time_num * (sex + age + adl + job + cdrsb0) + taupet0 + abpet0 + wzc + (1 | trial) + (time_num | patid),
+             data = dat_long,REML = FALSE) 
+
 summary(m5)
-
+anova(m4.5, m5)
 ```
+
+
+Final model 
 
 ```{r}
-# Install and load the car package if you haven't already
-# install.packages("car")
-library(car)
+m5 <- lmer(bprs ~ time_num * (sex + age + adl + job + cdrsb0) + taupet0 + abpet0 + wzc + (1 | trial) + (time_num | patid),
+             data = dat_long,REML = TRUE)
 
-# Assuming 'm5' is your fitted lmer model
-vif_values <- vif(m5)
-
-# Print the VIF values
-print(vif_values)
-
-
-
+summary(m5)
 ```
-```{r}
-cor(dat_long[, c("age", "adl", "cdrsb0", "taupet0", "abpet0", "time_num")], use = "pairwise")
-
-```
-```{r}
-tmp <- dat_long
-
-tmp$job_num <- as.numeric(as.character(tmp$job))
-tmp$wzc_num <- as.numeric(as.character(tmp$wzc))
-cor(tmp[, c("age", "job_num", "wzc_num")], use = "pairwise")
-
-
-```
-
-
-The interaction effect of sex, taupet0, abpet0 and wzc is not significant, let's remove them.
-
-
-```{r}
-
-m6 <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex + taupet0 + abpet0 + wzc +  (time_num | trial/patid)
-           ,data = dat_long, REML = FALSE)
-summary(m6)
-
-anova(m6, m5)
-
-```
-The more complex model does not significantly improve the fit, therefore we continue with the simpler model, m6. 
 
 
 
 ```{r}
-m6 <- lmer(bprs ~ time_num * (age + adl + job + cdrsb0) + sex + taupet0 + abpet0 + wzc +  (time_num | trial/patid)
-           ,data = dat_long, REML = TRUE)
-summary(m6)
-```
-
-```{r}
-res <- resid(m6)
-fit <- fitted(m6)
+res <- resid(m5)
+fit <- fitted(m5)
 plot(fit, res)
 abline(h = 0, col = 2)
 
@@ -285,111 +277,227 @@ hist(res, breaks = 40)
 ```
 
 ```{r}
-re <- ranef(m6, condVar = TRUE)
+# 1. Extract random effects
+re <- ranef(m5)
 
-## --- Patient-level random effects (patid within trial) ---
-qqnorm(re$`patid:trial`[, "(Intercept)"],
-       main = "QQ Plot – Random Intercepts (patid:trial)")
-qqline(re$`patid:trial`[, "(Intercept)"])
+# Optional: Set up a 1x3 plotting grid
+par(mfrow = c(1, 3))
 
-qqnorm(re$`patid:trial`[, "time_num"],
-       main = "QQ Plot – Random Slopes (patid:trial)")
-qqline(re$`patid:trial`[, "time_num"])
+# --- Patient-level Random Intercepts ---
+# Note: Use re$patid, not re$`patid:trial`
+qqnorm(re$patid[, "(Intercept)"],
+       main = "Patient Random Intercepts")
+qqline(re$patid[, "(Intercept)"], col = "red")
 
-## --- Trial-level random effects ---
+# --- Patient-level Random Slopes ---
+qqnorm(re$patid[, "time_num"],
+       main = "Patient Random Slopes")
+qqline(re$patid[, "time_num"], col = "red")
+
+# --- Trial-level Random Intercepts ---
 qqnorm(re$trial[, "(Intercept)"],
-       main = "QQ Plot – Random Intercepts (trial)")
-qqline(re$trial[, "(Intercept)"])
+       main = "Trial Random Intercepts")
+qqline(re$trial[, "(Intercept)"], col = "red")
 
-qqnorm(re$trial[, "time_num"],
-       main = "QQ Plot – Random Slopes (trial)")
-qqline(re$trial[, "time_num"])
-
+# Reset plotting parameters
+par(mfrow = c(1, 1))
 ```
 
 
-<!-- ```{r lmm} -->
-<!-- # Scaled covariates help convergence -->
-<!-- dat_long$age_s <- scale(dat_long$age) -->
-<!-- dat_long$bmi_s <- scale(dat_long$bmi) -->
-<!-- dat_long$adl_s <- scale(dat_long$adl) -->
-<!-- dat_long <- dat_long %>% -->
-<!--   mutate(time_num = as.numeric(as.character(trial))) -->
 
-<!-- form_fixed <- bprs ~ time_num + -->
-<!--   age_s + sex + edu + bmi_s + job + adl_s + wzc + -->
-<!--   cdrsb + abpet + taupet  -->
+```{r}
+dat2 <- dat %>%
+  filter(!patid %in% patid[is.na(bprs1)])
 
-<!-- ctrl <- lmeControl(opt = "nlminb", msMaxIter = 500, msMaxEval = 800, returnObject = TRUE) -->
+reshape_dat <- function(dat) {
+    dat_long <- dat %>%
+        pivot_longer(
+            cols = matches("^(bprs|cdrsb|abpet|taupet)\\d+"),
+            names_to = c(".value", "time"),
+            names_pattern = "(.+)(\\d+)"
+        )
+    dat_long
+}
 
-<!-- # Model 1: Random intercept and slope, NO residual correlation -->
-<!-- m_no_corr <- lme( -->
-<!--   fixed = form_fixed, -->
-<!--   data = dat_long, -->
-<!--   random = ~ time_num | patid,  -->
-<!--   method = "REML", -->
-<!--   na.action = na.omit  -->
-<!-- ) -->
+to_factor <- function(dat) {
+    dat <- dat %>%
+        mutate(
+            sex = as.factor(sex),
+            edu = as.factor(edu),
+            trial = as.factor(trial),
+            job = as.factor(job),
+            wzc = as.factor(wzc),
+        )
+    dat
+}
 
-<!-- # Model 2: Same random effects but with Compound Symmetry residual correlation  -->
-<!-- m_compsymm<- lme( -->
-<!--   fixed = form_fixed, -->
-<!--   random = ~1 | patid, -->
-<!--   correlation = corCompSymm(form = ~as.numeric(time_num) | patid), -->
-<!--   data = dat_long, -->
-<!--   method = "REML", -->
-<!--   na.action = na.omit, -->
-<!--   control = ctrl -->
-<!-- ) -->
-
-<!-- dat_long_unique <- dat_long %>% -->
-<!--   group_by(patid) %>% -->
-<!--   filter(n_distinct(time_num) > 1) %>% -->
-<!--   ungroup() -->
-
-<!-- # Model 3: Same random effects, but WITH AR(1) residual correlation -->
-<!-- m_ar1 <- lme( -->
-<!--   fixed = form_fixed, -->
-<!--   data = dat_long_unique, -->
-<!--   random = ~ time_num | patid, -->
-<!--   correlation = corAR1(form = ~ time_num | patid), -->
-<!--   method = "REML", -->
-<!--   na.action = na.omit, -->
-<!--   control = ctrl -->
-<!-- ) -->
-
-<!-- anova(m_no_corr, m_ar1) -->
-<!-- anova(m_no_corr, m_compsymm) -->
-<!-- anova(m_compsymm, m_ar1) -->
-
-<!-- ``` -->
-
-<!-- If singular, the random intercept adds no variance.  -->
-
-<!-- ```{r} -->
-<!-- vcov(m_no_corr) -->
-<!-- vcov(m_compsymm) -->
-<!-- # vcov(m_ar1) -->
-<!-- ``` -->
-<!-- ```{r model results} -->
-<!-- #summary(m_ar1) -->
-<!-- summary(m_no_corr) -->
-<!-- summary(m_compsymm) -->
-<!-- ``` -->
+dat2 <- to_factor(dat2)
+dat_long2 <- reshape_dat(dat2)
 
 
-<!-- Inter-individual variability is almost fully explained by these predictors hence the random intercept variance collapses to zero. That means it falls back to the multivariate OLS in practical terms. Residual variance (≈147) reflects large within-person or unexplained temporal fluctuation.  -->
+dat_long2 <- dat_long2 %>%
+    mutate(
+        time = as.factor(time),  # levels 0-6
+        time.num = as.numeric(as.character(time)) # values 0-6
+    )
 
 
-<!-- Check the appropriateness of your random-effects model. Calculate the subject-specific intercepts/slopes and compare them to the ones you obtained from a two-stage analysis. What do you conclude? -->
+# also with n = 147 subjects with 1 obs -> but respective betas are NA
+stage1_coefs_num <- dat_long2 %>%
+  select(patid, time.num, bprs) %>%
+  group_by(patid) %>%
+  summarise(patid = first(patid),
+            #model = lm(bprs ~ time, data = .),
+            beta0 = coef(lm(bprs ~ time.num))[1],
+            beta1 = coef(lm(bprs ~ time.num))[2]
+            )
 
-<!-- ```{r subject specific intercepts/slopes} -->
-<!-- m_RI  <- update(m_full, random = list(institute_id = pdDiag(~1), patid = pdDiag(~ 1)), method = "ML") -->
-<!-- m_RIRS <- update(m_full, random = list(institute_id = pdDiag(~1), patid = pdSymm(~ year)),method = "ML") -->
-<!-- anova(m_RI, m_RIRS)  # LRT; boundary -> p-value conservative; for exact use RLRsim::exactRLRT -->
 
-<!-- m_noCenter <- update(m_full, random = list(patid = pdSymm(~ year)), method = "ML") -->
-<!-- anova(m_noCenter, update(m_full, method = "ML")) -->
-<!-- ``` -->
+# Histogram for beta0
+p_beta0 <- ggplot(stage1_coefs_num, aes(x = beta0)) +
+  geom_histogram(bins = 30, color = "black", fill = "#603655") +
+  labs(
+    title = "Empirical distribution of β0",
+    x = "β0 (intercepts)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Histogram for beta1
+p_beta1 <- ggplot(stage1_coefs_num, aes(x = beta1)) +
+  geom_histogram(bins = 30, color = "black", fill = "#c49235") +
+  labs(
+    title = "Empirical distribution of β1",
+    x = "β1 (slopes)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Print them
+p_beta0
+p_beta1
+
+library(patchwork)
+
+(p_beta0 | p_beta1)
+
+
+baseline_covariates <- dat2 %>%
+  group_by(patid) %>%
+  slice(1) %>%
+  select(patid, age, sex, trial, edu, bmi, inkomen, job, adl, wzc, cdrsb0, abpet0, taupet0) %>%
+  ungroup()
+
+# Merge the Stage 1 coefficients with the baseline covariates
+stage2_dat <- left_join(stage1_coefs_num, baseline_covariates, by = "patid")
+
+ols_beta0 <- lm(beta0 ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
+ols_beta1 <- lm(beta1 ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
+
+stage2_model <- lm(cbind(beta0, beta1) ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
+# Extract residuals from the multivariate model
+resids <- residuals(stage2_model)
+
+# Calculate the correlation matrix
+cor(resids)
+
+# 3. View Results
+summary(stage2_model)
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(lme4)
+
+# ==============================================================================
+# STEP 1: Get the Data for Stage 2
+# ==============================================================================
+# We force patid to be character right here to avoid the join error
+stage2_data <- stage1_coefs_num %>%
+  mutate(patid = as.character(patid)) %>% 
+  inner_join(dat_long %>% 
+               mutate(patid = as.character(patid)) %>% # Force character here too
+               group_by(patid) %>% 
+               slice(1) %>% 
+               select(patid, age, sex, adl, job, cdrsb0, taupet0, abpet0, wzc),
+             by = "patid") %>%
+  filter(!is.na(beta0) & !is.na(beta1))
+
+# ==============================================================================
+# STEP 2: Run Stage 2 Models & Get Residuals
+# ==============================================================================
+
+# Model for Intercepts (beta0)
+# Predictors: All main effects from your LMM
+lm_intercept <- lm(beta0 ~ age + sex + adl + job + cdrsb0 + taupet0 + abpet0 + wzc, 
+                   data = stage2_data)
+
+# Model for Slopes (beta1)
+# Predictors: Only variables that interacted with time in your LMM
+# Your LMM: time_num * (sex + age + adl + job + cdrsb0)
+lm_slope <- lm(beta1 ~ age + sex + adl + job + cdrsb0, 
+               data = stage2_data)
+
+# Save the residuals (The "Unshrunk" deviations)
+stage2_data$resid_intercept <- residuals(lm_intercept)
+stage2_data$resid_slope <- residuals(lm_slope)
+
+# ==============================================================================
+# STEP 3: Get LMM Random Effects
+# ==============================================================================
+ran_eff <- ranef(m5)$patid
+ran_eff$patid <- rownames(ran_eff)
+
+# Rename and force patid to character
+lmm_data <- ran_eff %>%
+  mutate(patid = as.character(patid)) %>%
+  rename(lmm_random_intercept = `(Intercept)`,
+         lmm_random_slope = time_num)
+
+# ==============================================================================
+# STEP 4: Merge and Plot
+# ==============================================================================
+# Now both are characters, so this will work
+plot_data <- inner_join(stage2_data, lmm_data, by = "patid")
+
+# --- Plot 1: Intercept Deviations ---
+p1 <- ggplot(plot_data, aes(x = resid_intercept, y = lmm_random_intercept)) +
+  geom_point(alpha = 0.5, color = "#603655") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Intercept Deviations",
+       subtitle = "Comparison of Unexplained Variation",
+       x = "Stage 2 Residuals (OLS - Predicted)",
+       y = "LMM Random Intercepts (Shrunk)") +
+  theme_minimal()
+
+# --- Plot 2: Slope Deviations (The Shrinkage!) ---
+p2 <- ggplot(plot_data, aes(x = resid_slope, y = lmm_random_slope)) +
+  geom_point(alpha = 0.5, color = "#c49235") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Slope Deviations",
+       subtitle = "Note the 'tilt' indicating shrinkage",
+       x = "Stage 2 Residuals (OLS - Predicted)",
+       y = "LMM Random Slopes (Shrunk)") +
+  theme_minimal()
+
+# Show plots
+p1 | p2
+```
+
+
+
+
 
 

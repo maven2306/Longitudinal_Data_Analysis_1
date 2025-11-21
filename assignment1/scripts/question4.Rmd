@@ -228,10 +228,24 @@ baseline_covariates <- dat2 %>%
 # Merge the Stage 1 coefficients with the baseline covariates
 stage2_dat <- left_join(stage1_coefs_num, baseline_covariates, by = "patid")
 
+ols_beta0 <- lm(beta0 ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
+ols_beta1 <- lm(beta1 ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
 
 stage2_model <- lm(cbind(beta0, beta1) ~ age + sex + trial + edu + bmi + 
                    inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
                    data = stage2_dat)
+
+# Extract residuals from the multivariate model
+resids <- residuals(stage2_model)
+
+# Calculate the correlation matrix
+cor(resids)
 
 # 3. View Results
 summary(stage2_model)
