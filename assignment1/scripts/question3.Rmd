@@ -19,6 +19,9 @@ library(nlme)
 library(data.table)
 library(broom)
 library(lattice)
+library(sjPlot)
+library(xtable)
+library(kableExtra)
 
 ```
 
@@ -241,39 +244,7 @@ head(vcov_fixed, n = 20)
 ```
 We can check out the covariance matrix for our fixed effects. 
 
-```{r MOVE DOWN TO COVARIANCE SECTION}
-# Residual covariance matrix per patient
-pat1 <- dat_long$patid == levels(dat_long$patid)[1]
 
-resid_matrix <- getVarCov(m_full, individual = levels(dat_long$patid)[1])
-resid_matrix
-
-getVarCov(m_full, individual = levels(dat_long$patid)[2])
-getVarCov(m_full, individual = levels(dat_long$patid)[3])
-
-# this shows us that the same var-covar is estimated for each subject
-
-```
-
-
-In our current model, we have constant covariances that don't vary by patient
-
-```{r DELETE}
-mod2 <- m_full
-
-# random effect variance
-VarCorr(mod2)
-VarCorr(mod2)  # corr = T
-
-# for random effects model, this looks like this:
-# patid = pdLogChol(1) 
-#             Variance StdDev  
-# (Intercept) 3.229688 1.797133
-# Residual    3.971972 1.992981
-
-# function not available for gls
-
-```
 
 
 ####### Visualize the model fit 
@@ -317,39 +288,6 @@ qqline(resid(mod, type = "p"))
 ```
 Looks nice and normal. We dont need any linear transformation of our outcome.
 
-```{r DELETE}
-mod <- m_full
-
-## transform the random effects object a bit
-ranefs <- ranef(mod)
-
-dat_ranefs <- data.frame(patid = rownames(ranefs), intercept = ranefs[, "(Intercept)"])
-
-hist(dat_ranefs$intercept,
-     breaks = 20,
-     main = "Random intercepts by patient",
-     xlab = "Random intercept",
-     col = "grey",
-     border = "white")
-
-
-dotplot(sort(dat_ranefs$intercept),
-        main = "Random intercepts of patients",
-        xlab = "Random intercept")
-
-
-
-ggplot(dat_ranefs, aes(x = reorder(patid, intercept), y = intercept)) +
-  geom_point(color = "grey") +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  coord_flip() +  # horizontal for readability
-  theme_bw() +
-  labs(title = "Patient-level random intercepts",
-       x = "Patient ID",
-       y = "Random intercept")
-
-
-```
 
 Lets also visualize the residuals to check if our variance structure seems plausible:
 ```{r}
@@ -439,7 +377,7 @@ xtable(summary(m_full)$tTable)
 
 ```{r}
 
-library(kableExtra)
+# library(kableExtra)
 
 # kbl(m_full, digits = 3, booktabs = T, escape = F, caption = "Test")
 
@@ -577,77 +515,118 @@ m_prel_save <- m1 # backup model
 ```{r DELETE}
 m1 <- m_prel
 
-# time * age
+
 m2 <- gls(
-  model = bprs ~ time.num * age + trial + bmi + job + wzc + cdrsb.0, 
-  weights = varIdent(form = ~ 1 | time.num),       # different variances per year
-  # correlation = corSymm(form = ~ time.num | patid),
-  method = "ML",
-  data = dat_long,
-  na.action = na.exclude,
-  control = control_lme
+    model = bprs ~ time.num * age * cdrsb.0 * job + wzc + trial + bmi, 
+    weights = varIdent(form = ~ 1 | time.num),       # different variances per year
+    method = "ML",
+    data = dat_long,
+    na.action = na.exclude
 )
+a1 <- anova(m1, m2)
+m1 <- m2
 
-anova(m1, m2)
-
-# time * age * trial
+# time * age * cdrsb.0  # delete this ? ##########
 m3 <- gls(
-  model = bprs ~ time.num  * trial + bmi + job + wzc + cdrsb.0, 
-  weights = varIdent(form = ~ 1 | time.num),       # different variances per year
-  # correlation = corSymm(form = ~ time.num | patid),
-  method = "ML",
-  data = dat_long,
-  na.action = na.exclude,
-  control = control_lme
-)
-anova(m1, m3)  # this model is way worse, and we have to fit > 20 additional pars
-
-# time * age * cdrsb.0
-m4 <- gls(
   model = bprs ~ time.num * age * cdrsb.0 + trial + bmi + job + wzc, 
   weights = varIdent(form = ~ 1 | time.num),       # different variances per year
-  # correlation = corSymm(form = ~ time.num | patid),
   method = "ML",
   data = dat_long,
-  na.action = na.exclude,
-  control = control_lme
+  na.action = na.exclude
 )
-anova(m1, m4) 
-# we could choose this model, but the Likelihood Ratio is not super large
+a2 <- anova(m1, m3) 
 
-# time * age * wzc
-m5 <- gls(
-  model = bprs ~ time.num * age * wzc + trial + bmi + job + cdrsb.0, 
+# time * (age + cdrsb.0 + job)
+m4 <- gls(
+  model = bprs ~ time.num * (age + cdrsb.0 + job) + wzc + trial + bmi, 
   weights = varIdent(form = ~ 1 | time.num),       # different variances per year
-  # correlation = corSymm(form = ~ time.num | patid),
   method = "ML",
   data = dat_long,
-  na.action = na.exclude,
-  control = control_lme
+  na.action = na.exclude
 )
-anova(m1, m5)  # does not differ 
+a3 <- anova(m1, m4)
 
-# time * (trial + cdrsb.0)
+
+
+# time * (job + cdrsb.0)
 m5 <- gls(
-  model = bprs ~ time.num * (trial + cdrsb.0) + age + wzc + trial + bmi + job, 
+  model = bprs ~ time.num * (job + cdrsb.0) + age + wzc + trial + bmi, 
   weights = varIdent(form = ~ 1 | time.num),       # different variances per year
-  # correlation = corSymm(form = ~ time.num | patid),
   method = "ML",
   data = dat_long,
-  na.action = na.exclude,
-  control = control_lme
+  na.action = na.exclude
 )
-anova(m1, m5)  # this seems like a nice tradeoff, with not too many additional parameters but improved fit
+a4 <- anova(m1, m5)  
 
+
+# time * cdrsb.0
+m6 <- gls(
+  model = bprs ~ time.num * cdrsb.0 +  age + trial + bmi + job + wzc, 
+  weights = varIdent(form = ~ 1 | time.num),       # different variances per year
+  method = "ML",
+  data = dat_long,
+  na.action = na.exclude
+)
+a5 <- anova(m1, m6) 
+
+
+# time * age
+m7 <- gls(
+  model = bprs ~ time.num * age + trial + bmi + job + wzc + cdrsb.0, 
+  weights = varIdent(form = ~ 1 | time.num),       # different variances per year
+  method = "ML",
+  data = dat_long,
+  na.action = na.exclude
+)
+
+a6 <- anova(m1, m7)
 
 # rm(m2, m3, m4, m5)
 
 ```
 
-The following interactions between time and other predictors seem plausible for our data.
+XXX
 
-Also possible:
-time.num * (trial + cdrsb.0)
+###### Export
+```{r}
+
+anovas <- mget(paste0("a", seq(1:6)))
+
+anovas_df <- lapply(anovas, function(x) {
+    df <- as.data.frame(x)
+    df$model <- rownames(x)
+    df
+    })
+
+tab_anovas <- bind_rows(anovas_df)
+rownames(tab_anovas) <- NULL
+
+
+tab_anovas <- tab_anovas %>% 
+    select(-Model, -call) %>% 
+    relocate(model, .before = "df") %>%
+    mutate(
+
+        p.value.form = ifelse(`p-value` < .001, "< .001", sprintf("%.3f", tab_anovas$`p-value`)),
+        across(where(~is.numeric(.)), ~ round(., 2))
+    ) %>%
+    select(-`p-value`)
+
+tab_anovas <- tab_anovas %>% 
+    filter((!is.na(L.Ratio) & !is.na(p.value.form)) | row_number()==1  )
+
+
+q3_tab_anovas_ia_latex <- tab_anovas %>% 
+    kbl(format = "latex", 
+                   booktabs = TRUE, 
+                   caption = "Likelihood Ratio Tests used for model selection of main effects ",
+                   label = "tab:q3_anova_main_effects"
+                       ) %>%
+    kable_styling(latex_options = c("hold_position"))# %>% 
+    #save_kable("q3_anova_maineffects.tex")
+# print(q3_tab_anovas_latex)
+
+```
 
 
 
@@ -974,13 +953,6 @@ Intended visit	Actual timestamp (months)
 4 years	48.4
 
 
-#### Robust estimation
-```{r}
-# error: correct dataset to be used
-# coef_test(m_full, vcov = "CR2", cluster = na.exclude(dat_long$time))
-```
-
-
 
 ```{r}
 
@@ -1004,6 +976,27 @@ summary(m.covarstr)$sigma * weights
 
 ```{r}
 ### visualize the variances to find out
+```
+
+```{r MOVE DOWN TO COVARIANCE SECTION}
+# Residual covariance matrix per patient
+pat1 <- dat_long$patid == levels(dat_long$patid)[1]
+
+resid_matrix <- getVarCov(m_full, individual = levels(dat_long$patid)[1])
+resid_matrix
+
+getVarCov(m_full, individual = levels(dat_long$patid)[2])
+getVarCov(m_full, individual = levels(dat_long$patid)[3])
+
+# this shows us that the same var-covar is estimated for each subject
+
+```
+
+
+#### Robust estimation
+```{r}
+# error: correct dataset to be used
+# coef_test(m_full, vcov = "CR2", cluster = na.exclude(dat_long$time))
 ```
 
 
