@@ -5,50 +5,76 @@ date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
-```{r setup, include=FALSE}
-libraries <- c(
-  "haven", "dplyr", "tidyr", "ggplot2", "reshape2",
-  "viridis", "knitr", "kableExtra", "e1071"
+```{r}
+############################################################
+# PACKAGES REQUIRED FOR QUESTION 2
+############################################################
+
+libraries_q2 <- c(
+  "haven",      # read_sas
+  "dplyr",      # data manipulation
+  "tidyr",      # long reshape
+  "ggplot2",    # plots
+  "reshape2",   # melt()
+  "viridis",    # color scales
+  "knitr",      # summary tables
+  "kableExtra", # styled tables
+  "e1071"       # skewness()
 )
+
+# Install missing packages
+for (pkg in libraries_q2) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg)
+  }
+}
+
+# Load packages
+invisible(lapply(libraries_q2, library, character.only = TRUE))
+
+
+############################################################
+# LOAD DATA (SELF-CONTAINED)
+############################################################
 
 setwd("./../data")
 dat <- read_sas("alzheimer25.sas7bdat")
-str(dat)
-colSums(is.na(dat))
 
-```
 
-# Data Preparation; reshaping 
+############################################################
+# CANONICAL DATA PREPARATION (MATCH Q1)
+############################################################
 
-```{r reshape}
 reshape_dat <- function(dat) {
-    dat_long <- dat %>%
-        pivot_longer(
-            cols = matches("^(bprs|cdrsb|abpet|taupet)\\d+"),
-            names_to = c(".value", "time"),
-            names_pattern = "(.+)(\\d+)"
-        )
-    dat_long
+  dat_long <- dat %>%
+    pivot_longer(
+      cols = matches("^(bprs|cdrsb|abpet|taupet)\\d+"),
+      names_to = c(".value", "time"),
+      names_pattern = "(.+)(\\d+)"
+    )
+  dat_long
 }
 
 to_factor <- function(dat_long) {
-
-    dat_long <- dat_long %>%
-        mutate(
-            time = as.factor(time),  # coded 0-6
-            sex = as.factor(sex),
-            edu = as.factor(edu),
-            trial = as.factor(trial),
-            job = as.factor(job),
-            wzc = as.factor(wzc),
-            time_num = as.numeric(time)  # coded 1-7
-        )
-    dat_long
+  dat_long <- dat_long %>%
+    mutate(
+      time     = as.factor(time),     # coded 0–6
+      sex      = as.factor(sex),
+      edu      = as.factor(edu),
+      trial    = as.factor(trial),
+      job      = as.factor(job),
+      wzc      = as.factor(wzc),
+      time_num = as.numeric(time) - 1 # coded 0–6 (numeric)
+    )
+  dat_long
 }
 
+# Create long-format dataset
 dat_long <- reshape_dat(dat)
 dat_long <- to_factor(dat_long)
+
 ```
+
 
 ## Q2.  What summary statistics are appropriate for the analysis of these data ? Why ? Do they yield the same results ? Summarize your conclusion
 
