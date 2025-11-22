@@ -134,3 +134,121 @@ dfs_by_patid <- by(dat_long_cmpl, dat_long_cmpl$patid, identity)
 
 ```
 
+
+
+
+
+
+
+Model with continuous time 
+```{r}
+
+dat2 <- dat %>%
+  filter(!patid %in% patid[is.na(bprs1)])
+
+reshape_dat <- function(dat) {
+    dat_long <- dat %>%
+        pivot_longer(
+            cols = matches("^(bprs|cdrsb|abpet|taupet)\\d+"),
+            names_to = c(".value", "time"),
+            names_pattern = "(.+)(\\d+)"
+        )
+    dat_long
+}
+
+to_factor <- function(dat) {
+    dat <- dat %>%
+        mutate(
+            sex = as.factor(sex),
+            edu = as.factor(edu),
+            trial = as.factor(trial),
+            job = as.factor(job),
+            wzc = as.factor(wzc),
+        )
+    dat
+}
+
+dat2 <- to_factor(dat2)
+dat_long2 <- reshape_dat(dat2)
+
+
+dat_long2 <- dat_long2 %>%
+    mutate(
+        time = as.factor(time),  # levels 0-6
+        time.num = as.numeric(as.character(time)) # values 0-6
+    )
+
+
+# also with n = 147 subjects with 1 obs -> but respective betas are NA
+stage1_coefs_num <- dat_long2 %>%
+  select(patid, time.num, bprs) %>%
+  group_by(patid) %>%
+  summarise(patid = first(patid),
+            #model = lm(bprs ~ time, data = .),
+            beta0 = coef(lm(bprs ~ time.num))[1],
+            beta1 = coef(lm(bprs ~ time.num))[2]
+            )
+
+
+# Histogram for beta0
+p_beta0 <- ggplot(stage1_coefs_num, aes(x = beta0)) +
+  geom_histogram(bins = 30, color = "black", fill = "#603655") +
+  labs(
+    title = "Empirical distribution of β0",
+    x = "β0 (intercepts)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Histogram for beta1
+p_beta1 <- ggplot(stage1_coefs_num, aes(x = beta1)) +
+  geom_histogram(bins = 30, color = "black", fill = "#c49235") +
+  labs(
+    title = "Empirical distribution of β1",
+    x = "β1 (slopes)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Print them
+p_beta0
+p_beta1
+
+library(patchwork)
+
+(p_beta0 | p_beta1)
+
+
+baseline_covariates <- dat2 %>%
+  group_by(patid) %>%
+  slice(1) %>%
+  select(patid, age, sex, trial, edu, bmi, inkomen, job, adl, wzc, cdrsb0, abpet0, taupet0) %>%
+  ungroup()
+
+# Merge the Stage 1 coefficients with the baseline covariates
+stage2_dat <- left_join(stage1_coefs_num, baseline_covariates, by = "patid")
+
+ols_beta0 <- lm(beta0 ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
+ols_beta1 <- lm(beta1 ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
+
+stage2_model <- lm(cbind(beta0, beta1) ~ age + sex + trial + edu + bmi + 
+                   inkomen + job + adl + wzc + cdrsb0 + abpet0 + taupet0, 
+                   data = stage2_dat)
+
+# Extract residuals from the multivariate model
+resids <- residuals(stage2_model)
+
+# Calculate the correlation matrix
+cor(resids)
+
+# 3. View Results
+summary(stage2_model)
+
+```
+

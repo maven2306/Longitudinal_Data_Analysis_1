@@ -9,67 +9,77 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Conclusions at the bottom of the page 
-
-
 ```{r}
-# List of required packages
-libraries <- c(
-  "haven", "dplyr", "tidyr", "ggplot2", "reshape2",
-  "viridis", "knitr", "kableExtra"
+############################################################
+# PACKAGES REQUIRED FOR QUESTION 1
+############################################################
+
+libraries_q1 <- c(
+  "haven",      # read_sas
+  "dplyr",      # data manipulation
+  "tidyr",      # pivot_longer
+  "ggplot2",    # plots
+  "reshape2",   # melt()
+  "viridis",    # viridis color scales
+  "knitr",      # knitr tables
+  "kableExtra"  # styled tables
 )
 
 # Install missing packages
-for (pkg in libraries) {
+for (pkg in libraries_q1) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     install.packages(pkg)
   }
 }
 
-# Load all packages
-invisible(lapply(libraries, library, character.only = TRUE))
-
-```
+# Load packages
+invisible(lapply(libraries_q1, library, character.only = TRUE))
 
 
-```{r}
+############################################################
+# LOAD RAW DATA (ALWAYS FROM SCRATCH)
+############################################################
+
+# Set path relative to project structure
 setwd("./../data")
-dat <- read_sas("alzheimer25.sas7bdat")
-str(dat)
-colSums(is.na(dat))
-```
 
-# Data Preparation
-```{r reshape}
+dat <- read_sas("alzheimer25.sas7bdat")
+
+
+############################################################
+# CANONICAL DATA PRE-PROCESSING FOR ALL QUESTIONS
+# (Q2–Q5 MUST FOLLOW THE SAME RULES)
+############################################################
 
 reshape_dat <- function(dat) {
-    dat_long <- dat %>%
-        pivot_longer(
-            cols = matches("^(bprs|cdrsb|abpet|taupet)\\d+"),
-            names_to = c(".value", "time"),
-            names_pattern = "(.+)(\\d+)"
-        )
-    dat_long
+  dat_long <- dat %>%
+    pivot_longer(
+      cols = matches("^(bprs|cdrsb|abpet|taupet)\\d+"),
+      names_to = c(".value", "time"),
+      names_pattern = "(.+)(\\d+)"
+    )
+  dat_long
 }
 
 to_factor <- function(dat_long) {
 
-    dat_long <- dat_long %>%
-        mutate(
-            time = as.factor(time),  # coded 0-6
-            sex = as.factor(sex),
-            edu = as.factor(edu),
-            trial = as.factor(trial),
-            job = as.factor(job),
-            wzc = as.factor(wzc),
-            time_num = as.numeric(time)  # coded 1-7
-        )
-    dat_long
+  dat_long <- dat_long %>%
+    mutate(
+      time     = as.factor(time),    # coded 0–6
+      sex      = as.factor(sex),
+      edu      = as.factor(edu),
+      trial    = as.factor(trial),
+      job      = as.factor(job),
+      wzc      = as.factor(wzc),
+      time_num = as.numeric(time) - 1    # numeric 0–6
+    )
+
+  dat_long
 }
 
+# Create long-format dataset
 dat_long <- reshape_dat(dat)
 dat_long <- to_factor(dat_long)
-
 
 ```
 
@@ -155,23 +165,35 @@ mean_var_summary <- plot_df %>%
     .groups = "drop"
   )
 
-ggplot(mean_var_summary, aes(x = year, y = mean_value)) +
-  geom_line(color = "firebrick", linewidth = 1.2) +
-  geom_point(color = "firebrick", size = 2) +
-  geom_ribbon(aes(ymin = mean_value - sd_value,
-                  ymax = mean_value + sd_value),
-              fill = "firebrick", alpha = 0.2) +
-  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
-  labs(
-    title = "Mean ± SD per variable across years",
-    x = "Year", y = "Mean ± SD"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(strip.text = element_text(face = "bold"))
+plots <- list()
+
+for (v in unique(mean_var_summary$variable)) {
+  
+  df_v <- mean_var_summary %>% filter(variable == v)
+  
+  p <- ggplot(df_v, aes(x = year, y = mean_value)) +
+    geom_line(color = "firebrick", linewidth = 1.2) +
+    geom_point(color = "firebrick", size = 2) +
+    geom_ribbon(aes(ymin = mean_value - sd_value,
+                    ymax = mean_value + sd_value),
+                fill = "firebrick", alpha = 0.2) +
+    labs(
+      title = paste("Mean ± SD across years –", v),
+      x = "Year", y = "Mean ± SD"
+    ) +
+    theme_minimal(base_size = 14)
+  
+  plots[[v]] <- p
+}
+
+# Display all four plots
+plots$bprs
+plots$cdrsb
+plots$abpet
+plots$taupet
+
 
 ```
-
-
 ## Correlation matrix of continuous features at baseline
 
 ```{r}
@@ -734,7 +756,7 @@ dat_long2 <- dat2 %>%
   pivot_longer(
     cols = starts_with("bprs"),
     names_to = "measurement_occasion",
-    values_to = "bprs"
+    values_to = "bprs_value"
   ) %>%
   mutate(
     year = as.numeric(gsub("bprs", "", measurement_occasion))
@@ -742,7 +764,7 @@ dat_long2 <- dat2 %>%
 
 # Count non-missing observations by year × age_bin
 plot_data <- dat_long2 %>%
-  filter(!is.na(bprs)) %>%
+  filter(!is.na(bprs_value)) %>%
   group_by(year, age_bin) %>%
   summarise(count = n(), .groups = "drop")
 
